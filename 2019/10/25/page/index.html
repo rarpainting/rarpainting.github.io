@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  
+  <title>MySQL 网络协议 | Hexo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="MySQL Network Protocol泮关森胡桃夹子 String 编码 FixedLengthString(定长方式): 需先知道 String 的长度, MySQL 中的一个例子就是 ERR_Packet 包((后续会讲到)就使用了这种编码方式, 因为它的长度固定, 用 5 个字节存储所有数据 NullTerminatedString(Null 结尾方式): 字符串以遇到 Null 作为">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MySQL 网络协议">
+<meta property="og:url" content="https://github.com/rarpainting/2019/10/25/page/index.html">
+<meta property="og:site_name" content="Hexo">
+<meta property="og:description" content="MySQL Network Protocol泮关森胡桃夹子 String 编码 FixedLengthString(定长方式): 需先知道 String 的长度, MySQL 中的一个例子就是 ERR_Packet 包((后续会讲到)就使用了这种编码方式, 因为它的长度固定, 用 5 个字节存储所有数据 NullTerminatedString(Null 结尾方式): 字符串以遇到 Null 作为">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="https://github.com/custom/img/2016120540338355.jpg">
+<meta property="og:updated_time" content="2019-10-25T14:56:58.524Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="MySQL 网络协议">
+<meta name="twitter:description" content="MySQL Network Protocol泮关森胡桃夹子 String 编码 FixedLengthString(定长方式): 需先知道 String 的长度, MySQL 中的一个例子就是 ERR_Packet 包((后续会讲到)就使用了这种编码方式, 因为它的长度固定, 用 5 个字节存储所有数据 NullTerminatedString(Null 结尾方式): 字符串以遇到 Null 作为">
+<meta name="twitter:image" content="https://github.com/custom/img/2016120540338355.jpg">
+  
+  <link rel="stylesheet" href="//cdn.bootcss.com/highlight.js/9.2.0/styles/github.min.css">
+  <script src="//cdn.bootcss.com/highlight.js/9.2.0/highlight.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', (event) => {
+      document.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightBlock(block);
+      });
+    });
+  </script>
+  <link rel="stylesheet" href="/css/index.css">
+</head>
+</html>
+<body style="
+
+
+  background-color: #eff0f6
+
+">
+  <div id="container">
+    <nav id="nav">
+  <header class="header">
+    <a href="/" class="title">Rarpainting</a>
+  </header>
+  <div class="ctnWrap">
+    <div class="icons">
+      
+        
+          
+            <a href="https://github.com/rarpainting" target="_blank" class="nav-icn iconfont icon-github"></a>
+          
+        
+      
+    </div>
+    <div class="menu">
+      
+        
+            <a href="/" class="nav-menu ">HOME</a>
+          
+        
+            <a href="/archives" class="nav-menu ">ARCHIVE</a>
+          
+        
+            <a href="/about" class="nav-menu ">ABOUT</a>
+          
+        
+      
+    </div>
+  </div>
+</nav>
+    <div id="main"><section class="article">
+  <h2 class="title">MySQL 网络协议</h2>
+  <p class="sub">Oct 25, 2019</p>
+  <article class="content">
+    <h1 id="MySQL-Network-Protocol"><a href="#MySQL-Network-Protocol" class="headerlink" title="MySQL Network Protocol"></a>MySQL Network Protocol</h1><p><a href="http://www.godpan.me/2017/11/10/mysql-protocol.html" target="_blank" rel="noopener">泮关森</a><br><a href="http://hutaow.com/blog/2013/11/06/mysql-protocol-analysis/" target="_blank" rel="noopener">胡桃夹子</a></p>
+<h2 id="String-编码"><a href="#String-编码" class="headerlink" title="String 编码"></a>String 编码</h2><ul>
+<li><code>FixedLengthString</code>(定长方式): 需先知道 String 的长度, MySQL 中的一个例子就是 <code>ERR_Packet</code> 包((后续会讲到)就使用了这种编码方式, 因为它的长度固定, 用 5 个字节存储所有数据</li>
+<li><code>NullTerminatedString</code>(Null 结尾方式): 字符串以遇到 Null 作为结束标志, 相应的字节为 00</li>
+<li><code>VariableLengthString</code>(动态计算字符串长度方式): 字符串的长度取决于其他变量计算而定, 比如一个字符串由 <code>Integer</code> + <code>Value</code> 组成, 我们通过计算 Integer 的值来获取 Value 的具体的长度</li>
+<li><code>LengthEncodedString</code>(指定字符串长度方式): 与 <code>VariableLengthString</code> 原理相似, 是它的一种特殊情况, 具体例子就是我上条举的这个例子</li>
+<li><code>RestOfPacketString</code>(包末端字符串方式): 一个包末端的字符串, 可根据包的总长度金和当前位置得到字符串的长度, 实际中并不常用</li>
+</ul>
+<h2 id="基本数据包格式-LittleEndian"><a href="#基本数据包格式-LittleEndian" class="headerlink" title="基本数据包格式(LittleEndian)"></a>基本数据包格式(LittleEndian)</h2><h3 id="Server-to-Client"><a href="#Server-to-Client" class="headerlink" title="Server to Client"></a>Server to Client</h3><ul>
+<li>每个数据包大小不能超过 <strong>2^24</strong> bytes, 否则执行分包</li>
+<li>每个数据包前都需要加上数据包信息</li>
+<li>(特别的), 当数据等于 2^24-1 bytes, 仍会执行分包, 但是第二个包是一个空包</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Type</th>
+<th style="text-align:left">Name</th>
+<th style="text-align:left">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">int<3></3></td>
+<td style="text-align:left">payload_length</td>
+<td style="text-align:left">数据包具体长度, 除去首部 4 字节后开始的内容</td>
+</tr>
+<tr>
+<td style="text-align:left">int<1></1></td>
+<td style="text-align:left">sequence_id</td>
+<td style="text-align:left">每个包的序列 id , 总数据内容大于 16MB 时使用, 从 0 开始, 新命令重载为 0</td>
+</tr>
+<tr>
+<td style="text-align:left">string</td>
+<td style="text-align:left">payload</td>
+<td style="text-align:left">包中除去头部后的具体数据内容</td>
+</tr>
+</tbody>
+</table>
+<h3 id="Client-to-Server"><a href="#Client-to-Server" class="headerlink" title="Client to Server"></a>Client to Server</h3><p>| Type   | Name     | Description  |<br>| int<1> | 执行命令 | 执行的操作码 |<br>| string | 参数     | 命令相应参数 |</1></p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">类型值</th>
+<th style="text-align:left">命令</th>
+<th style="text-align:left">功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">0x00</td>
+<td style="text-align:left"><code>COM_SLEEP</code></td>
+<td style="text-align:left">(内部线程状态)</td>
+</tr>
+<tr>
+<td style="text-align:left">0x01</td>
+<td style="text-align:left"><code>COM_QUIT</code></td>
+<td style="text-align:left">关闭连接</td>
+</tr>
+<tr>
+<td style="text-align:left">0x02</td>
+<td style="text-align:left"><code>COM_INIT_DB</code></td>
+<td style="text-align:left">切换数据库</td>
+</tr>
+<tr>
+<td style="text-align:left">0x03</td>
+<td style="text-align:left"><code>COM_QUERY</code></td>
+<td style="text-align:left">SQL 查询请求</td>
+</tr>
+<tr>
+<td style="text-align:left">0x04</td>
+<td style="text-align:left"><code>COM_FIELD_LIST</code></td>
+<td style="text-align:left">获取数据表字段信息</td>
+</tr>
+<tr>
+<td style="text-align:left">0x05</td>
+<td style="text-align:left"><code>COM_CREATE_DB</code></td>
+<td style="text-align:left">创建数据库</td>
+</tr>
+<tr>
+<td style="text-align:left">0x06</td>
+<td style="text-align:left"><code>COM_DROP_DB</code></td>
+<td style="text-align:left">删除数据库</td>
+</tr>
+<tr>
+<td style="text-align:left">0x07</td>
+<td style="text-align:left"><code>COM_REFRESH</code></td>
+<td style="text-align:left">清除缓存</td>
+</tr>
+<tr>
+<td style="text-align:left">0x08</td>
+<td style="text-align:left"><code>COM_SHUTDOWN</code></td>
+<td style="text-align:left">停止服务器</td>
+</tr>
+<tr>
+<td style="text-align:left">0x09</td>
+<td style="text-align:left"><code>COM_STATISTICS</code></td>
+<td style="text-align:left">获取服务器统计信息</td>
+</tr>
+<tr>
+<td style="text-align:left">0x0A</td>
+<td style="text-align:left"><code>COM_PROCESS_INFO</code></td>
+<td style="text-align:left">获取当前连接的列表</td>
+</tr>
+<tr>
+<td style="text-align:left">0x0B</td>
+<td style="text-align:left"><code>COM_CONNECT</code></td>
+<td style="text-align:left">(内部线程状态)</td>
+</tr>
+<tr>
+<td style="text-align:left">0x0C</td>
+<td style="text-align:left"><code>COM_PROCESS_KILL</code></td>
+<td style="text-align:left">中断某个连接</td>
+</tr>
+<tr>
+<td style="text-align:left">0x0D</td>
+<td style="text-align:left"><code>COM_DEBUG</code></td>
+<td style="text-align:left">保存服务器调试信息</td>
+</tr>
+<tr>
+<td style="text-align:left">0x0E</td>
+<td style="text-align:left"><code>COM_PING</code></td>
+<td style="text-align:left">测试连通性</td>
+</tr>
+<tr>
+<td style="text-align:left">0x0F</td>
+<td style="text-align:left"><code>COM_TIME</code></td>
+<td style="text-align:left">(内部线程状态)</td>
+</tr>
+<tr>
+<td style="text-align:left">0x10</td>
+<td style="text-align:left"><code>COM_DELAYED_INSERT</code></td>
+<td style="text-align:left">(内部线程状态)</td>
+</tr>
+<tr>
+<td style="text-align:left">0x11</td>
+<td style="text-align:left"><code>COM_CHANGE_USER</code></td>
+<td style="text-align:left">重新登陆(不断连接)</td>
+</tr>
+<tr>
+<td style="text-align:left">0x12</td>
+<td style="text-align:left"><code>COM_BINLOG_DUMP</code></td>
+<td style="text-align:left">获取二进制日志信息</td>
+</tr>
+<tr>
+<td style="text-align:left">0x13</td>
+<td style="text-align:left"><code>COM_TABLE_DUMP</code></td>
+<td style="text-align:left">获取数据表结构信息</td>
+</tr>
+<tr>
+<td style="text-align:left">0x14</td>
+<td style="text-align:left"><code>COM_CONNECT_OUT</code></td>
+<td style="text-align:left">(内部线程状态)</td>
+</tr>
+<tr>
+<td style="text-align:left">0x15</td>
+<td style="text-align:left"><code>COM_REGISTER_SLAVE</code></td>
+<td style="text-align:left">从服务器向主服务器进行注册</td>
+</tr>
+<tr>
+<td style="text-align:left">0x16</td>
+<td style="text-align:left"><code>COM_STMT_PREPARE</code></td>
+<td style="text-align:left">预处理 SQL 语句</td>
+</tr>
+<tr>
+<td style="text-align:left">0x17</td>
+<td style="text-align:left"><code>COM_STMT_EXECUTE</code></td>
+<td style="text-align:left">执行预处理语句</td>
+</tr>
+<tr>
+<td style="text-align:left">0x18</td>
+<td style="text-align:left"><code>COM_STMT_SEND_LONG_DATA</code></td>
+<td style="text-align:left">发送 BLOB 类型的数据</td>
+</tr>
+<tr>
+<td style="text-align:left">0x19</td>
+<td style="text-align:left"><code>COM_STMT_CLOSE</code></td>
+<td style="text-align:left">销毁预处理语句</td>
+</tr>
+<tr>
+<td style="text-align:left">0x1A</td>
+<td style="text-align:left"><code>COM_STMT_RESET</code></td>
+<td style="text-align:left">清除预处理语句参数缓存</td>
+</tr>
+<tr>
+<td style="text-align:left">0x1B</td>
+<td style="text-align:left"><code>COM_SET_OPTION</code></td>
+<td style="text-align:left">设置语句选项</td>
+</tr>
+<tr>
+<td style="text-align:left">0x1C</td>
+<td style="text-align:left"><code>COM_STMT_FETCH</code></td>
+<td style="text-align:left">获取预处理语句的执行结果</td>
+</tr>
+</tbody>
+</table>
+<h2 id="数据库账户验证阶段"><a href="#数据库账户验证阶段" class="headerlink" title="数据库账户验证阶段"></a>数据库账户验证阶段</h2><ol>
+<li>Client 与 Server 进行连接</li>
+<li>Server 向 Client 发送 Handshake packet</li>
+<li>CLient 向 Server 发送 Auth packet</li>
+<li>Server 向 Client 发送 OK packet 或 Err Packet</li>
+</ol>
+<h3 id="Handshake-packet"><a href="#Handshake-packet" class="headerlink" title="Handshake packet"></a>Handshake packet</h3><table>
+<thead>
+<tr>
+<th style="text-align:left">相对包内容的位置</th>
+<th style="text-align:left">长度/byte</th>
+<th style="text-align:left">名称</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">0</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">协议版本</td>
+<td style="text-align:left">协议版本的版本号(通常为 10/0X0A )</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">len=strlen(<code>server_version</code>)+1</td>
+<td style="text-align:left">数据库版本</td>
+<td style="text-align:left">通过 NullTerminated 格式编码, 长度为 len(<code>server_version</code>)+1(0x00)</td>
+</tr>
+<tr>
+<td style="text-align:left">len+1</td>
+<td style="text-align:left">4</td>
+<td style="text-align:left">thread ID</td>
+<td style="text-align:left">MySQL Server 上的 thread ID</td>
+</tr>
+<tr>
+<td style="text-align:left">len+5</td>
+<td style="text-align:left">8+1(0x00 表示 结束)</td>
+<td style="text-align:left">挑战随机数(Part 1)</td>
+<td style="text-align:left">用于后续账户密码验证</td>
+</tr>
+<tr>
+<td style="text-align:left">len+14</td>
+<td style="text-align:left">2</td>
+<td style="text-align:left">协议协商</td>
+<td style="text-align:left">用于与客户端协商通讯方式</td>
+</tr>
+<tr>
+<td style="text-align:left">len+16</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">编码格式</td>
+<td style="text-align:left">标识数据库目前的编码格式</td>
+</tr>
+<tr>
+<td style="text-align:left">len+17</td>
+<td style="text-align:left">2</td>
+<td style="text-align:left">服务器状态</td>
+<td style="text-align:left">标识服务器状态(如 处于事务模式 / 自动条件事务模式)</td>
+</tr>
+<tr>
+<td style="text-align:left">len+19</td>
+<td style="text-align:left">13</td>
+<td style="text-align:left">保留字节</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">len+32</td>
+<td style="text-align:left">12+1(0x00)</td>
+<td style="text-align:left">挑战随机数(Part 2)</td>
+<td style="text-align:left">用于后续账户密码验证</td>
+</tr>
+</tbody>
+</table>
+<h3 id="Auth-packet"><a href="#Auth-packet" class="headerlink" title="Auth packet"></a>Auth packet</h3><table>
+<thead>
+<tr>
+<th style="text-align:left">相对包内容的位置</th>
+<th style="text-align:left">长度/byte</th>
+<th style="text-align:left">名称</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">0</td>
+<td style="text-align:left">4</td>
+<td style="text-align:left">协议协商</td>
+<td style="text-align:left">用于与服务端通讯方式</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:left">4</td>
+<td style="text-align:left">消息最长长度</td>
+<td style="text-align:left">客户端(可)发送或接收的最长长度, 0 表示不做限制</td>
+</tr>
+<tr>
+<td style="text-align:left">8</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">字符编码</td>
+<td style="text-align:left">客户端字符编码方式</td>
+</tr>
+<tr>
+<td style="text-align:left">9</td>
+<td style="text-align:left">23</td>
+<td style="text-align:left">保留字节</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">32</td>
+<td style="text-align:left">不定</td>
+<td style="text-align:left">认证字符串</td>
+<td style="text-align:left">(用户名/NullTerminatedString 编码)+(加密后密码/LengthEncodedString 编码)+(数据库名称(可选)/NullTerminatedString 编码)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="命令执行阶段"><a href="#命令执行阶段" class="headerlink" title="命令执行阶段"></a>命令执行阶段</h2><p>即 Server 端接收命令后执行的相应操作, 所发出的数据包:</p>
+<ul>
+<li>Data Field: 包数据的一个基础结构</li>
+<li>OK 包(包括 PREPARE_OK): Server 端发送正确信息的包 | 包头标识 – 0x00</li>
+<li>Error 包: Server 端发送错误信息的包 | 包头标识 – 0xFF</li>
+<li>EOF 包: Server 发到 Client 的结束包 | 包头标识 – 0xFE</li>
+<li>Result Set 包: Server 发到 Client 的查询结果包</li>
+</ul>
+<h3 id="Data-Field"><a href="#Data-Field" class="headerlink" title="Data Field"></a>Data Field</h3><p>查询结果包的数据编码结构, 与 LengthEncodedInteger 和 LengthEncodedString 相似</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">数据长度范围</th>
+<th style="text-align:left">数据长度</th>
+<th style="text-align:left">格式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">[1, 251)</td>
+<td style="text-align:left">1 byte</td>
+<td style="text-align:left">1 byte + Data</td>
+</tr>
+<tr>
+<td style="text-align:left">[251, 2^16)</td>
+<td style="text-align:left">2 bytes</td>
+<td style="text-align:left">0xFC + 2 bytes + Data</td>
+</tr>
+<tr>
+<td style="text-align:left">[2^16, 2^24)</td>
+<td style="text-align:left">4 bytes</td>
+<td style="text-align:left">0xFD + 4 bytes + Data</td>
+</tr>
+<tr>
+<td style="text-align:left">[2^24, 2^64)</td>
+<td style="text-align:left">8 bytes</td>
+<td style="text-align:left">0xFE + 8 bytes + Data</td>
+</tr>
+<tr>
+<td style="text-align:left">NULL</td>
+<td style="text-align:left">0 byte</td>
+<td style="text-align:left">0xFB (251)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="OK-包"><a href="#OK-包" class="headerlink" title="OK 包"></a>OK 包</h3><p>普通的 OK 包:</p>
+<ul>
+<li><code>COM_PING</code>: 连接或者测试数据库</li>
+<li><code>COM_QUERY</code>: 不需要查询结果集的操作(INSERT / UPDATE / ALTER TABLE 等)</li>
+<li><code>COM_REFRESH</code>: 数据刷新</li>
+<li><code>COM_REGISTER_SLAVE</code>: 注册从服务器</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">相对包内容的位置</th>
+<th style="text-align:left">长度/byte</th>
+<th style="text-align:left">名称</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">0</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">包头标识</td>
+<td style="text-align:left">0x00</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left"><code>rows_len</code></td>
+<td style="text-align:left">影响行数</td>
+<td style="text-align:left">相应操作影响的行数</td>
+</tr>
+<tr>
+<td style="text-align:left">1 + <code>rows_len</code></td>
+<td style="text-align:left"><code>id_len</code></td>
+<td style="text-align:left">自增 id</td>
+<td style="text-align:left">插入一条记录时, 如果是自增 id 的话, 返回的 id 值</td>
+</tr>
+<tr>
+<td style="text-align:left">1 + <code>rows_len</code> + <code>id_len</code></td>
+<td style="text-align:left">2</td>
+<td style="text-align:left">服务器状态</td>
+<td style="text-align:left">用于表示服务器状态, 比如是否是事务模式或者自动提交模式</td>
+</tr>
+<tr>
+<td style="text-align:left">3 + <code>rows_len</code> + <code>id_len</code></td>
+<td style="text-align:left">2</td>
+<td style="text-align:left">警告数</td>
+<td style="text-align:left">上次命令引起的警告数</td>
+</tr>
+<tr>
+<td style="text-align:left">5 + <code>rows_len</code> + <code>id_len</code></td>
+<td style="text-align:left"><code>msg_len</code></td>
+<td style="text-align:left">额外信息</td>
+<td style="text-align:left">此次操作的一些额外信息</td>
+</tr>
+</tbody>
+</table>
+<h3 id="Error-包"><a href="#Error-包" class="headerlink" title="Error 包"></a>Error 包</h3><p>错误返回</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">相对包内容的位置</th>
+<th style="text-align:left">长度/byte</th>
+<th style="text-align:left">名称</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">0</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">包头标识</td>
+<td style="text-align:left">0xFF</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">2</td>
+<td style="text-align:left">错误代码</td>
+<td style="text-align:left">该错误的相应错误代码</td>
+</tr>
+<tr>
+<td style="text-align:left">3</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">标识位</td>
+<td style="text-align:left">SQL 执行状态标识位, 用 ‘#’ 进行标识</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:left">5</td>
+<td style="text-align:left">执行状态</td>
+<td style="text-align:left">SQL 的具体执行状态</td>
+</tr>
+<tr>
+<td style="text-align:left">9</td>
+<td style="text-align:left"><code>msg_len</code></td>
+<td style="text-align:left">错误信息</td>
+<td style="text-align:left">具体的错误信息</td>
+</tr>
+</tbody>
+</table>
+<h3 id="EOF-Packet"><a href="#EOF-Packet" class="headerlink" title="EOF Packet"></a>EOF Packet</h3><p>用于标志某个阶段数据结束的标志包, EOF 包会在以下的情况产生:</p>
+<ul>
+<li>结果集中 字段 信息结束的时候</li>
+<li>结果集中 列 信息结束的视乎</li>
+<li>服务器确认停止服务的时候</li>
+<li>客户端发送 <code>COM_SET_OPTION</code> and <code>COM_DEBUG</code> 命令后, 服务器回应的时候</li>
+<li>服务器请求使用 MySQL4.1 版本(<code>textRows</code>: 3.20 &lt;= Ver &lt; 4.1)之前的认证方式(Auth)的时候</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">相对包内容的位置</th>
+<th style="text-align:left">长度/byte</th>
+<th style="text-align:left">名称</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">0</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">包头标识</td>
+<td style="text-align:left">0xFE</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">2</td>
+<td style="text-align:left">警告数</td>
+<td style="text-align:left">上次命令引起的警告数</td>
+</tr>
+<tr>
+<td style="text-align:left">3</td>
+<td style="text-align:left">2</td>
+<td style="text-align:left">服务器状态</td>
+</tr>
+</tbody>
+</table>
+<h3 id="Result-Set"><a href="#Result-Set" class="headerlink" title="Result Set"></a>Result Set</h3><table>
+<thead>
+<tr>
+<th style="text-align:left">相对包内容的位置</th>
+<th style="text-align:left">含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">Result Set Header</td>
+<td style="text-align:left">返回数据的列数量</td>
+</tr>
+<tr>
+<td style="text-align:left">Field</td>
+<td style="text-align:left">返回数据的列信息(多个)</td>
+</tr>
+<tr>
+<td style="text-align:left">EOF</td>
+<td style="text-align:left">列结束</td>
+</tr>
+<tr>
+<td style="text-align:left">Row Data</td>
+<td style="text-align:left">行数据(多个)</td>
+</tr>
+<tr>
+<td style="text-align:left">EOF</td>
+<td style="text-align:left">数据结束</td>
+</tr>
+</tbody>
+</table>
+<h4 id="Result-Set-Header"><a href="#Result-Set-Header" class="headerlink" title="Result Set Header"></a>Result Set Header</h4><table>
+<thead>
+<tr>
+<th style="text-align:left">长度</th>
+<th style="text-align:left">含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">1-9 bytes</td>
+<td style="text-align:left">数据的列数量/LengthEncodedInteger 编码</td>
+</tr>
+<tr>
+<td style="text-align:left">1-9 bytes</td>
+<td style="text-align:left">(可选)额外信息/LengthEncodedINteger 编码</td>
+</tr>
+</tbody>
+</table>
+<h4 id="Field"><a href="#Field" class="headerlink" title="Field"></a>Field</h4><table>
+<thead>
+<tr>
+<th style="text-align:left">长度</th>
+<th style="text-align:left">含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">n</td>
+<td style="text-align:left">&gt;=4.1 , 目录名称/“def”(Data Field)</td>
+</tr>
+<tr>
+<td style="text-align:left">n</td>
+<td style="text-align:left">数据库名称(Data Field)</td>
+</tr>
+<tr>
+<td style="text-align:left">n</td>
+<td style="text-align:left">假如查询指定了表别名, 就是表别名(Data Field)</td>
+</tr>
+<tr>
+<td style="text-align:left">n</td>
+<td style="text-align:left">原始的表名(Data Field)</td>
+</tr>
+<tr>
+<td style="text-align:left">n</td>
+<td style="text-align:left">假如查询指定了列别名, 就是列别名(Data Field)</td>
+</tr>
+<tr>
+<td style="text-align:left">n</td>
+<td style="text-align:left">原始的列名(Data Field)</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">标识位, 通常为 12, 表示接下去的 12 个字节是具体的 field 内容</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:left">field 列的编码</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:left">field 列的长度</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">field 列的类型(<code>/include/mysql_com.h</code> – <code>FIELD_TYPE_*</code>) OR <code>/libbinlogevents/export/binary_log_types.h</code> – <code>enum enum_field_types</code>)</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:left">field 列的标识</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:left">field 值(如果是 数值 )的小数点精度</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:left">预留字节</td>
+</tr>
+<tr>
+<td style="text-align:left">n</td>
+<td style="text-align:left">可选元素, 如果存在, 则表示该 field 的默认值</td>
+</tr>
+</tbody>
+</table>
+<h4 id="Row-Data"><a href="#Row-Data" class="headerlink" title="Row Data"></a>Row Data</h4><ul>
+<li>每个 Row Data 包含多个字段值, 且字段间没有间隔</li>
+<li>内部的字符串通过 LengthEncodedString 编码</li>
+</ul>
+<h3 id="PREPARE-OK-packet"><a href="#PREPARE-OK-packet" class="headerlink" title="PREPARE_OK packet"></a>PREPARE_OK packet</h3><p>当 Client 向 Server 发送 预处理 SQL 语句 , Server 正确回应时的包</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">长度</th>
+<th style="text-align:left">含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">0x00 (标识是一个 OK 包)</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:left"><code>statement_handler_id</code>(预处理语句 id)</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:left">number of columns in result set (结果集中列的数量)</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:left">number of parameters in query (查询语句中参数的数量)</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">0x00 (填充值)</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:left">警告数</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>在执行(exec) prepare statement 时, 如果结果集(result set)的 columns 数和 parameters 数都大于 0 , 则会有额外的两个包传输以上两者信息:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">内容</th>
+<th style="text-align:left">含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">Field</td>
+<td style="text-align:left">columns 信息</td>
+</tr>
+<tr>
+<td style="text-align:left">EOF</td>
+<td style="text-align:left">columns 结束</td>
+</tr>
+<tr>
+<td style="text-align:left">Field</td>
+<td style="text-align:left">parameters 信息</td>
+</tr>
+<tr>
+<td style="text-align:left">EOF</td>
+<td style="text-align:left">parameters 结束</td>
+</tr>
+</tbody>
+</table>
+<h3 id="Row-Data-Binary"><a href="#Row-Data-Binary" class="headerlink" title="Row Data Binary"></a>Row Data Binary</h3><p>与 <a href="#Row Data">Row Data</a> 的差异:</p>
+<ul>
+<li>用不同的方式定义 NULL</li>
+<li>根据数据类型的不同进行相应的编码</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">相对包内容的位置</th>
+<th style="text-align:left">长度/byte</th>
+<th style="text-align:left">名称</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">0</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">包头标识</td>
+<td style="text-align:left">0x00</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">(<code>col_count</code>+7+2)/8</td>
+<td style="text-align:left">Null Bit Map</td>
+<td style="text-align:left">前两位为预留字节, 主要用于区别与其他的几种包(OK, ERROR, EOF), 在 MySQL 5 之后这两个字节都为 0X00, 其中 <code>col_count</code> 为列的数量</td>
+</tr>
+<tr>
+<td style="text-align:left">(<code>col_count</code>+7+2)/8 + 1</td>
+<td style="text-align:left">n</td>
+<td style="text-align:left">column values</td>
+<td style="text-align:left">具体的列值, 重复多次, 根据值类型编码</td>
+</tr>
+</tbody>
+</table>
+<h4 id="Null-Bit-Map"><a href="#Null-Bit-Map" class="headerlink" title="Null Bit Map"></a>Null Bit Map</h4><p>Row Data Binary 中 NULL 的定义((<code>col_count</code> +7)/8):</p>
+<ul>
+<li>参数个数: 1-8</li>
+<li>长度: 1 byte</li>
+<li>具体值范围: -1, 2^n 组合</li>
+<li>描述: 1=2^0 表示第一个参数为 NULL, 3=2^0+2^1 表示第一和第二个参数为 0</li>
+<li>以 8 个参数为一个周期(1 bytes)</li>
+</ul>
+<p>对于 string 之外的具体类型, 编码规则:</p>
+<ul>
+<li>基本数据类型: TINYINT – 1 byte; FLOAT – 4 bytes; DOUBLE – 8 bytes</li>
+<li>时间类型(Date/Datetime/Timestamp): 如以下所示</li>
+</ul>
+<h4 id="DATE-DATETIME-TIMESTAMP"><a href="#DATE-DATETIME-TIMESTAMP" class="headerlink" title="DATE/DATETIME/TIMESTAMP"></a>DATE/DATETIME/TIMESTAMP</h4><p><a href="https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_binary_resultset.html" target="_blank" rel="noopener">Binary Protocol Resultset</a></p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Type</th>
+<th style="text-align:left">Name</th>
+<th style="text-align:left">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">int<1></1></td>
+<td style="text-align:left">length</td>
+<td style="text-align:left">number of bytes following (valid values: 0, 4, 7, 11)</td>
+</tr>
+<tr>
+<td style="text-align:left">int<2></2></td>
+<td style="text-align:left">year</td>
+<td style="text-align:left">year</td>
+</tr>
+<tr>
+<td style="text-align:left">int<1></1></td>
+<td style="text-align:left">month</td>
+<td style="text-align:left">month</td>
+</tr>
+<tr>
+<td style="text-align:left">int<1></1></td>
+<td style="text-align:left">day</td>
+<td style="text-align:left">day</td>
+</tr>
+<tr>
+<td style="text-align:left">int<1></1></td>
+<td style="text-align:left">hour</td>
+<td style="text-align:left">hour</td>
+</tr>
+<tr>
+<td style="text-align:left">int<1></1></td>
+<td style="text-align:left">minute</td>
+<td style="text-align:left">minute</td>
+</tr>
+<tr>
+<td style="text-align:left">int<1></1></td>
+<td style="text-align:left">second</td>
+<td style="text-align:left">second</td>
+</tr>
+<tr>
+<td style="text-align:left">int<4></4></td>
+<td style="text-align:left">microsecond</td>
+<td style="text-align:left">micro seconds</td>
+</tr>
+</tbody>
+</table>
+<p>Example:</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">0b da 07 0a 11 13 1b 1e 01 00 00 00 -- datetime 2010-10-17 19:27:30.000 001</span><br><span class="line">04 da 07 0a 11                      -- date = 2010-10-17</span><br><span class="line">0b da 07 0a 11 13 1b 1e 01 00 00 00 -- timestamp</span><br></pre></td></tr></table></figure>
+<h3 id="Execute-packet"><a href="#Execute-packet" class="headerlink" title="Execute packet"></a>Execute packet</h3><p>Client 发给 Server, 用于执行 预处理语句</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">长度</th>
+<th style="text-align:left">含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left"><code>COM_EXECUTE</code>(标识是一个 Execute 包)</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:left">预处理语句 id</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">游标类型</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:left">预留字节</td>
+</tr>
+<tr>
+<td style="text-align:left">0</td>
+<td style="text-align:left">接下去的内容只有在有参数的情况下</td>
+</tr>
+<tr>
+<td style="text-align:left">(<code>param_count</code>+7)/8</td>
+<td style="text-align:left"><code>null_bit_map</code>(描述参数中 NULL 的情况)</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">参数绑定情况</td>
+</tr>
+<tr>
+<td style="text-align:left">n*2</td>
+<td style="text-align:left">参数类型(依次存储)</td>
+</tr>
+<tr>
+<td style="text-align:left">n</td>
+<td style="text-align:left">参数具体值(非 NULL)(依次存储, 使用 Row Data Binary 方式编码)</td>
+</tr>
+</tbody>
+</table>
+
+  </article>
+  <footer class="f-cf">
+    
+    
+  </footer>
+</section>
+</div>
+    <footer id="footer" class="f-cf">
+  zhandequanla00@gmail.com
+  
+    
+      
+        · <a href="https://github.com/rarpainting" target="_blank" class="nav-icn">GitHub</a>
+      
+    
+  
+  <span class="copyright">All rights reserved @Rarpainting</span>
+  <div>
+    <div style="float: left">
+      <div>
+        <span style="margin-right: 20px">ICP主体备案号</span><span>粤ICP备17099046号</span>
+      </div>
+      <div>
+        <span style="margin-right: 20px">网站备案号</span><span>粤ICP备17099046号-1</span>
+      </div>
+    </div>
+    <div style="float: right">
+      <div>
+        <span>Copyright</span>
+        <span style="margin-right: 10px">©</span>
+        <span>MyWeb詹</span>
+      </div>
+    </div>
+  <div>
+</div></div></footer>
+
+  </div>
+</body>
+</html>
