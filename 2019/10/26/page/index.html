@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  
+  <title>TLS 证书申请 | Hexo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="现在 TLS 证书的申请有许多方式, 内部使用(Openssl), acme , 这篇就记录下不同的证书申请方式 OpensslOpenssl 一般配合内部 CA 生成用于内部使用的证书 123# CA$ openssl genrsa -out rootCA.key 2048$ openssl req -x509 -new -nodes -key rootCA.key -subj &quot;/CN=*.c">
+<meta property="og:type" content="article">
+<meta property="og:title" content="TLS 证书申请">
+<meta property="og:url" content="https://github.com/rarpainting/2019/10/26/page/index.html">
+<meta property="og:site_name" content="Hexo">
+<meta property="og:description" content="现在 TLS 证书的申请有许多方式, 内部使用(Openssl), acme , 这篇就记录下不同的证书申请方式 OpensslOpenssl 一般配合内部 CA 生成用于内部使用的证书 123# CA$ openssl genrsa -out rootCA.key 2048$ openssl req -x509 -new -nodes -key rootCA.key -subj &quot;/CN=*.c">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="https://github.com/custom/img/266062619.jpg">
+<meta property="og:updated_time" content="2019-10-26T03:04:22.009Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="TLS 证书申请">
+<meta name="twitter:description" content="现在 TLS 证书的申请有许多方式, 内部使用(Openssl), acme , 这篇就记录下不同的证书申请方式 OpensslOpenssl 一般配合内部 CA 生成用于内部使用的证书 123# CA$ openssl genrsa -out rootCA.key 2048$ openssl req -x509 -new -nodes -key rootCA.key -subj &quot;/CN=*.c">
+<meta name="twitter:image" content="https://github.com/custom/img/266062619.jpg">
+  
+  <link rel="stylesheet" href="//cdn.bootcss.com/highlight.js/9.2.0/styles/github.min.css">
+  <script src="//cdn.bootcss.com/highlight.js/9.2.0/highlight.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', (event) => {
+      document.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightBlock(block);
+      });
+    });
+  </script>
+  <link rel="stylesheet" href="/css/index.css">
+</head>
+</html>
+<body style="
+
+
+  background-color: #eff0f6
+
+">
+  <div id="container">
+    <nav id="nav">
+  <header class="header">
+    <a href="/" class="title">Rarpainting</a>
+  </header>
+  <div class="ctnWrap">
+    <div class="icons">
+      
+        
+          
+            <a href="https://github.com/rarpainting" target="_blank" class="nav-icn iconfont icon-github"></a>
+          
+        
+      
+    </div>
+    <div class="menu">
+      
+        
+            <a href="/" class="nav-menu ">HOME</a>
+          
+        
+            <a href="/archives" class="nav-menu ">ARCHIVE</a>
+          
+        
+            <a href="/about" class="nav-menu ">ABOUT</a>
+          
+        
+      
+    </div>
+  </div>
+</nav>
+    <div id="main"><section class="article">
+  <h2 class="title">TLS 证书申请</h2>
+  <p class="sub">Oct 26, 2019</p>
+  <article class="content">
+    <p>现在 TLS 证书的申请有许多方式, 内部使用(Openssl), acme , 这篇就记录下不同的证书申请方式</p>
+<h2 id="Openssl"><a href="#Openssl" class="headerlink" title="Openssl"></a>Openssl</h2><p>Openssl 一般配合内部 CA 生成用于内部使用的证书</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span> CA</span><br><span class="line"><span class="meta">$</span> openssl genrsa -out rootCA.key 2048</span><br><span class="line"><span class="meta">$</span> openssl req -x509 -new -nodes -key rootCA.key -subj "/CN=*.ca-domain.com" -days 5000 -out rootCA.crt</span><br></pre></td></tr></table></figure>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span> Server</span><br><span class="line"><span class="meta">$</span> openssl genrsa -out server.key 2048</span><br><span class="line"><span class="meta">$</span> openssl req -new -key server.key -subj "/CN=*.server-domain.com" -out server.csr</span><br><span class="line"><span class="meta">$</span> openssl x509 -req -in server.csr -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out server.crt -days 5000</span><br></pre></td></tr></table></figure>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span> Client</span><br><span class="line"><span class="meta">$</span> openssl genrsa -out client.key 2048</span><br><span class="line"><span class="meta">$</span> openssl req -new -key client.key -subj "/CN=client-id" -out client.csr</span><br><span class="line"><span class="meta">$</span> cat client.ext</span><br><span class="line"><span class="meta">#</span> extendedKeyUsage=clientAuth</span><br><span class="line"><span class="meta">$</span> openssl x509 -req -in client.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -extfile client.ext -out client.crt -days 5000</span><br></pre></td></tr></table></figure>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span> client 证书转换成浏览器认识的格式</span><br><span class="line"><span class="meta">$</span> openssl pkcs12 -export -clcerts -in client.crt -inkey client.key -out client.pfx</span><br></pre></td></tr></table></figure>
+<h2 id="ACME"><a href="#ACME" class="headerlink" title="ACME"></a>ACME</h2><p>ACME 是 let’s encrypt 的自动证书颁发协议, 目前最新的协议是 ACMEv2 , 但是只有 <a href="https://github.com/Neilpang/acme.sh">acme.sh</a> 支持, 官方的 <a href="https://github.com/certbot/certbot">Certbot</a> 和个人常用的 go-acme 并未支持</p>
+<h3 id="go-acme"><a href="#go-acme" class="headerlink" title="go-acme"></a>go-acme</h3><p>Go 官方的扩展库 <code>golang.org/x/crypto/acme</code> 支持 acme 协议, 而且使用简单:</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">m := autocert.Manager&#123;</span><br><span class="line">	Prompt:     autocert.AcceptTOS,</span><br><span class="line">	HostPolicy: autocert.HostWhitelist(<span class="string">"host.weblarsa.cn"</span>),</span><br><span class="line">	Cache:      autocert.DirCache(<span class="string">"/var/www/.cache"</span>),</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">tlsconfig := m.TLSConfig()</span><br><span class="line">tlsconfig.MinVersion = tls.VersionTLS11</span><br><span class="line">tlsconfig.PreferServerCipherSuites = <span class="literal">true</span> <span class="comment">// 控制服务器使用已配置的 cipherSuites 顺序</span></span><br><span class="line"><span class="comment">// client 证书设置</span></span><br><span class="line">tlsconfig.ClientAuth = tls.NoClientCert <span class="comment">// client 认证方式</span></span><br><span class="line"><span class="comment">// tlsconfig.ClientCAs = nil            // client 证书 CA , 不设置则使用 server 的 CA 集</span></span><br></pre></td></tr></table></figure>
+<h3 id="acme-sh"><a href="#acme-sh" class="headerlink" title="acme.sh"></a>acme.sh</h3><p>acme.sh 是社区维护的一个 ACME 协议脚本, <a href="https://github.com/Neilpang/acme.sh">github</a> 上有许多的场景实例, 以下仅给出配合 Docker-Nginx 的场景命令:</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">version:</span> <span class="string">'3.4'</span></span><br><span class="line"><span class="attr">services:</span></span><br><span class="line"><span class="attr">  web:</span></span><br><span class="line"><span class="attr">    image:</span> <span class="string">nginx</span></span><br><span class="line"><span class="attr">    container_name:</span> <span class="string">nginx</span></span><br><span class="line"><span class="attr">    labels:</span></span><br><span class="line"><span class="bullet">      -</span> <span class="string">sh.acme.autoload.domain=host.weblarsa.cn</span></span><br><span class="line"></span><br><span class="line">  <span class="string">acme.sh:</span></span><br><span class="line"><span class="attr">    image:</span> <span class="string">neilpang/acme.sh</span></span><br><span class="line"><span class="attr">    container_name:</span> <span class="string">acme.sh</span></span><br><span class="line"><span class="attr">    command:</span> <span class="string">daemon</span></span><br><span class="line"><span class="attr">    volumes:</span></span><br><span class="line"><span class="bullet">      -</span> <span class="string">./acmeout:/acme.sh</span></span><br><span class="line"><span class="bullet">      -</span> <span class="string">/var/run/docker.sock:/var/run/docker.sock</span></span><br><span class="line"><span class="attr">    environment:</span></span><br><span class="line"><span class="bullet">      -</span> <span class="string">DEPLOY_DOCKER_CONTAINER_LABEL=sh.acme.autoload.domain=host.weblarsa.cn</span></span><br><span class="line"><span class="bullet">      -</span> <span class="string">DEPLOY_DOCKER_CONTAINER_KEY_FILE=/etc/nginx/ssl/host.weblarsa.cn/key.pem</span></span><br><span class="line"><span class="bullet">      -</span> <span class="string">DEPLOY_DOCKER_CONTAINER_CERT_FILE="/etc/nginx/ssl/host.weblarsa.cn/cert.pem"</span></span><br><span class="line"><span class="bullet">      -</span> <span class="string">DEPLOY_DOCKER_CONTAINER_CA_FILE="/etc/nginx/ssl/host.weblarsa.cn/ca.pem"</span></span><br><span class="line"><span class="bullet">      -</span> <span class="string">DEPLOY_DOCKER_CONTAINER_FULLCHAIN_FILE="/etc/nginx/ssl/host.weblarsa.cn/full.pem"</span></span><br><span class="line"><span class="bullet">      -</span> <span class="string">DEPLOY_DOCKER_CONTAINER_RELOAD_CMD="service</span> <span class="string">nginx</span> <span class="string">force-reload"</span></span><br></pre></td></tr></table></figure>
+<h3 id="Certbot"><a href="#Certbot" class="headerlink" title="Certbot"></a>Certbot</h3><p>certbot 是 let’s crypto 官方的 ACME 工具, 申请方法如下:</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">$</span> letsencrypt-auto certonly --standalone -d host.weblarsa.cn</span><br></pre></td></tr></table></figure>
+<p>当然以上只是申请了一次, 需要定时申请以及搭配 Nginx 等使用的场景留到之后需要在补充吧</p>
+
+  </article>
+  <footer class="f-cf">
+    
+    
+      <a href="/2019/10/25/page/" class="link f-fr">MySQL 网络协议⟶</a>
+    
+  </footer>
+</section>
+</div>
+    <footer id="footer" class="f-cf">
+  zhandequanla00@gmail.com
+  
+    
+      
+        · <a href="https://github.com/rarpainting" target="_blank" class="nav-icn">GitHub</a>
+      
+    
+  
+  <span class="copyright">All rights reserved @Rarpainting</span>
+  <div>
+    <div style="float: left">
+      <div>
+        <span style="margin-right: 20px">ICP主体备案号</span><span>粤ICP备17099046号</span>
+      </div>
+      <div>
+        <span style="margin-right: 20px">网站备案号</span><span>粤ICP备17099046号-1</span>
+      </div>
+    </div>
+    <div style="float: right">
+      <div>
+        <span>Copyright</span>
+        <span style="margin-right: 10px">©</span>
+        <span>MyWeb詹</span>
+      </div>
+    </div>
+  <div>
+</div></div></footer>
+
+  </div>
+</body>
+</html>
